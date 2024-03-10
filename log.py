@@ -38,6 +38,8 @@ class ControlThreads(ThreadPoolExecutor):
     A thread pool executor that extends concurrent.futures.ThreadPoolExecutor, providing
     enhanced logging capabilities, group task management, and customized logging functionalities.
     
+    Its important to mention that errors in threads are logged as critical and the thread is not stopped.
+    
     Methods
     -------
     submit(fn, *args, group="default", **kwargs):
@@ -68,53 +70,106 @@ class ControlThreads(ThreadPoolExecutor):
     Note: Replace 'your_script' with the actual name of your script file without the '.py' extension.
     """
     
-    def __init__(self, log_file = None, print_log = True, debug=False, max_workers=psutil.cpu_count(logical=True) - 2):
-        ThreadPoolExecutor.__init__(self, max_workers)
-        self.lock = Lock()
-        
-        self.tasks = {'default': []}
-        self.log_file = log_file
-        
-        if self.log_file is not None:
-            self.init_log()
-        
-        self.workers = max_workers
-        self.print_log = print_log
-        self.debug = debug
-        
-    def reconfigure(self, *args, **kwds):
-        return super().__call__(*args, **kwds)
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Lock
+    import psutil
 
-    def init_log(self):
+    class Log(ThreadPoolExecutor):
+        def __init__(self, log_file=None, print_log=True, debug=False, max_workers=psutil.cpu_count(logical=True) - 2):
+            """
+            Initialize the Log object.
+
+            Args:
+                log_file (str): Path to the log file. If None, logging to a file is disabled.
+                print_log (bool): Whether to print log messages to the console.
+                debug (bool): Whether to enable debug mode.
+                max_workers (int): Maximum number of worker threads to use.
+
+            """
+            ThreadPoolExecutor.__init__(self, max_workers)
+            self.lock = Lock()
+            
+            self.tasks = {'default': []}
+            self.log_file = log_file
+            
+            if self.log_file is not None:
+                self._init_log()
+            
+            self.workers = max_workers
+            self.print_log = print_log
+            self.debug = debug
+
+        def reconfigure(self, *args, **kwargs):
+            """
+            Reconfigure the Log object with new settings.
+
+            Args:
+                log_file (str): Path to the log file. If None, logging to a file is disabled.
+                print_log (bool): Whether to print log messages to the console.
+                debug (bool): Whether to enable debug mode.
+                max_workers (int): Maximum number of worker threads to use.
+
+            """
+            # Reconfigure the Log object with new settings
+            return super().__call__(*args, **kwargs)
+
+    def _init_log(self):
         io = open(self.log_file, 'a')
         io.close()
         
-    def submit(self, fn, *args, group = "default", **kwargs):
+    def submit(self, fn, *args, group="default", **kwargs):
+        """
+        Submits a task to the executor for execution.
+
+        Args:
+            fn: The function to be executed.
+            *args: Positional arguments to be passed to the function.
+            group: The group to which the task belongs (default is "default").
+            **kwargs: Keyword arguments to be passed to the function.
+
+        """
         future = super().submit(fn, *args, **kwargs)
         future.add_done_callback(worker_callbacks)
         if group not in self.tasks:
             self.tasks[group] = []
         self.tasks[group].append(future)
 
-
     def get_logs(self):
+        """
+        Reads the contents of the log file and returns them as a list of lines.
+
+        Raises:
+            Exception: If no log file was defined.
+
+        Returns:
+            list: A list of lines read from the log file.
+        """
         if self.log_file is None:
             raise Exception("No log file was defined")
         f = open(self.log_file, 'r')
         return f.readlines()
-    
+
     def get_queue(self, group = 'default'):
         return [i.done() for i in self.tasks[group]]
     
     def info(self, content, **kwargs):
+        """ Logs an informational message. """
         self.wlog(content, "[info]")
+        
     def time(self, content):
+        """ Logs an time message. """
         self.wlog(content, "[time]")
+        
     def warn(self, content):
+        """ Logs an warn message. """
         self.wlog(content, "[warning]")
+        
     def critical(self, content):
+        """ Logs an critical message. """
         self.wlog(content, "[critical]")
+        
     def debug(self, content):
+        """ Logs an debug message. """
         if self.debug:
             self.wlog(content, "[debug]")
     
@@ -142,6 +197,13 @@ class ControlThreads(ThreadPoolExecutor):
                 io.close()
 
     def timer(self, func):
+        """
+        A decorator function that measures the execution time of a given function and writes to the log.
+
+        @control.timer
+        def my_function():
+            # code goes here
+        """
         def wrapper(*args, **kwargs):
             start = time.time()
             result = func(*args, **kwargs)
@@ -152,6 +214,12 @@ class ControlThreads(ThreadPoolExecutor):
         return wrapper
 
     def wait(self, group = "default"):
+        """
+        Waits for all tasks in the specified group to complete.
+
+        Args:
+            group (str, optional): The group name. Defaults to "default".
+        """
         if group not in self.tasks:
             return
         queue = [i.done() for i in self.tasks[group]]
@@ -161,14 +229,17 @@ class ControlThreads(ThreadPoolExecutor):
             queue = [i.done() for i in self.tasks[group]]
 
     def clear_logs(self):
+        """
+        Clears the contents of the log file.
+        """
         io = open(self.log_file, 'w')
         io.close()
 
-    def finishLog(self, filename):
-        os.system(f'cp {self.log_file} {filename}')
-        self.clear_logs()
     
 def worker_callbacks(f):
+    """
+    Called to create trace of exceptions in threads.
+    """
     e = f.exception()
 
     if e is None:
@@ -187,7 +258,6 @@ def worker_callbacks(f):
     trace_str = ""
     for key, i in enumerate(trace):
         trace_str += f"[Trace {key}: {i['filename']} - {i['name']}() - line {i['lineno']}]"
-        
         
     control.critical(f"""{type(e).__name__}: {str(e)} -> {trace_str}""")
 
