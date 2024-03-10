@@ -70,48 +70,44 @@ class ControlThreads(ThreadPoolExecutor):
     Note: Replace 'your_script' with the actual name of your script file without the '.py' extension.
     """
     
-    from concurrent.futures import ThreadPoolExecutor
-    from threading import Lock
-    import psutil
+    
+    def __init__(self, log_file=None, print_log=True, debug=False, max_workers=psutil.cpu_count(logical=True) - 2):
+        """
+        Initialize the Log object.
 
-    class Log(ThreadPoolExecutor):
-        def __init__(self, log_file=None, print_log=True, debug=False, max_workers=psutil.cpu_count(logical=True) - 2):
-            """
-            Initialize the Log object.
+        Args:
+            log_file (str): Path to the log file. If None, logging to a file is disabled.
+            print_log (bool): Whether to print log messages to the console.
+            debug (bool): Whether to enable debug mode.
+            max_workers (int): Maximum number of worker threads to use.
 
-            Args:
-                log_file (str): Path to the log file. If None, logging to a file is disabled.
-                print_log (bool): Whether to print log messages to the console.
-                debug (bool): Whether to enable debug mode.
-                max_workers (int): Maximum number of worker threads to use.
+        """
+        ThreadPoolExecutor.__init__(self, max_workers)
+        self.lock = Lock()
+        
+        self.tasks = {'default': []}
+        self.log_file = log_file
+        
+        if self.log_file is not None:
+            self._init_log()
+        
+        self.workers = max_workers
+        self.print_log = print_log
+        self.debug_mode = debug
 
-            """
-            ThreadPoolExecutor.__init__(self, max_workers)
-            self.lock = Lock()
-            
-            self.tasks = {'default': []}
-            self.log_file = log_file
-            
-            if self.log_file is not None:
-                self._init_log()
-            
-            self.workers = max_workers
-            self.print_log = print_log
-            self.debug = debug
+    def reconfigure(self, *args, **kwargs):
+        """
+        Reconfigure the Log object with new settings.
 
-        def reconfigure(self, *args, **kwargs):
-            """
-            Reconfigure the Log object with new settings.
+        Args:
+            log_file (str): Path to the log file. If None, logging to a file is disabled.
+            print_log (bool): Whether to print log messages to the console.
+            debug (bool): Whether to enable debug mode.
+            max_workers (int): Maximum number of worker threads to use.
 
-            Args:
-                log_file (str): Path to the log file. If None, logging to a file is disabled.
-                print_log (bool): Whether to print log messages to the console.
-                debug (bool): Whether to enable debug mode.
-                max_workers (int): Maximum number of worker threads to use.
-
-            """
-            # Reconfigure the Log object with new settings
-            return super().__call__(*args, **kwargs)
+        """
+        # Reconfigure the Log object with new settings
+        return super().__call__(*args, **kwargs)
 
     def _init_log(self):
         io = open(self.log_file, 'a')
@@ -170,7 +166,7 @@ class ControlThreads(ThreadPoolExecutor):
         
     def debug(self, content):
         """ Logs an debug message. """
-        if self.debug:
+        if self.debug_mode:
             self.wlog(content, "[debug]")
     
     def wlog(self, content, tipo="[info]", print_log = True):
