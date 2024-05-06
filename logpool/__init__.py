@@ -1,0 +1,1 @@
+from logpool.log import control
