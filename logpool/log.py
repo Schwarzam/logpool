@@ -40,7 +40,16 @@ class ControlThreads:
     >>> print(future.result())
     """
     
-    def __init__(self, log_file=None, print_log=True, debug=False, max_workers=psutil.cpu_count(logical=True) - 2, use_process_pool=False):
+    def __init__(
+        self, 
+        log_file=None, 
+        print_log=True, 
+        debug=False, 
+        max_workers=psutil.cpu_count(logical=True) - 2, 
+        use_process_pool=False,
+        keep_in_memory=False
+    ):
+        
         """
         Initialize the ControlThreads object.
 
@@ -60,6 +69,10 @@ class ControlThreads:
         self.print_log = print_log
         self.debug_mode = debug
         self.use_process_pool = use_process_pool
+        
+        self.keep_in_memory = keep_in_memory
+        self.memory = []
+        
         self.executor = ProcessPoolExecutor(max_workers) if use_process_pool else ThreadPoolExecutor(max_workers)
     
     def reconfigure(self, *args, **kwargs):
@@ -148,6 +161,8 @@ class ControlThreads:
             log_message = f"{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}  {tipo} - {os.path.basename(filename)} - {function}() - {str(content)}"
         if print_log:
             print(log_message, end="\n")
+        if self.keep_in_memory:
+            self.memory.append(log_message)
         if self.log_file is not None:
             with self.lock:
                 with open(self.log_file, 'a') as io:
