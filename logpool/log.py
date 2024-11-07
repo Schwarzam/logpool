@@ -47,7 +47,8 @@ class ControlThreads:
         debug=False, 
         max_workers=psutil.cpu_count(logical=True) - 2, 
         use_process_pool=False,
-        keep_in_memory=False
+        keep_in_memory=False,
+        simple_log=False
     ):
         
         """
@@ -69,6 +70,7 @@ class ControlThreads:
         self.print_log = print_log
         self.debug_mode = debug
         self.use_process_pool = use_process_pool
+        self.simple_log = simple_log
         
         self.keep_in_memory = keep_in_memory
         self.memory = []
@@ -153,12 +155,18 @@ class ControlThreads:
         function = func.co_name
         filename = func.co_filename
         thread_id = threading.current_thread().native_id
+        
+        log_message = f"{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}  "
+        
         if tipo == "[critical]":
-            log_message = f"{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}  {tipo} - Thread {thread_id} - {str(content)}"
+            log_message += f"{tipo} - Thread {thread_id} - {str(content)}"
         elif tipo == "[time]":
-            log_message = f"{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}  {tipo} - {str(content)}"
+            log_message += f"{tipo} - {str(content)}"
         else:
-            log_message = f"{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}  {tipo} - {os.path.basename(filename)} - {function}() - {str(content)}"
+            if self.simple_log:
+                log_message = f"{tipo} - {str(content)}"
+            else:
+                log_message += f"{tipo} - {os.path.basename(filename)} - {function}() - {str(content)}"
         if print_log:
             print(log_message, end="\n")
         if self.keep_in_memory:
