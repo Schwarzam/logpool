@@ -48,7 +48,8 @@ class ControlThreads:
         max_workers=psutil.cpu_count(logical=True) - 2, 
         use_process_pool=False,
         keep_in_memory=False,
-        simple_log=False
+        simple_log=False,
+        callback=None
     ):
         
         """
@@ -70,7 +71,8 @@ class ControlThreads:
         self.print_log = print_log
         self.debug_mode = debug
         self.use_process_pool = use_process_pool
-        self.simple_log = simple_log
+        self.simple_log = simple_log,
+        self.callback = callback
         
         self.keep_in_memory = keep_in_memory
         self.memory = []
@@ -175,6 +177,9 @@ class ControlThreads:
             with self.lock:
                 with open(self.log_file, 'a') as io:
                     io.write(log_message + "\n")
+        
+        if self.callback is not None:
+            self.callback(log_message)
 
     def timer(self, func):
         """
