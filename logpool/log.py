@@ -76,6 +76,7 @@ class ControlThreads:
         
         self.keep_in_memory = keep_in_memory
         self.memory = []
+        self.thread_results = {'default': []}
         
         self.executor = ProcessPoolExecutor(max_workers) if use_process_pool else ThreadPoolExecutor(max_workers)
     
@@ -106,12 +107,19 @@ class ControlThreads:
             *args: Positional arguments to be passed to the function.
             group: The group to which the task belongs (default is "default").
             **kwargs: Keyword arguments to be passed to the function.
+
+        Returns:
+            Future: The Future object representing the task.
         """
         future = self.executor.submit(fn, *args, **kwargs)
         future.add_done_callback(worker_callbacks)
+        
         if group not in self.tasks:
             self.tasks[group] = []
+            self.thread_results[group] = []
+        
         self.tasks[group].append(future)
+        return future
 
     def get_logs(self):
         """
@@ -207,11 +215,41 @@ class ControlThreads:
         """
         if group not in self.tasks:
             return
-        queue = [i.done() for i in self.tasks[group]]
-        while False in queue:
-            time.sleep(0.05)
-            queue = [i.done() for i in self.tasks[group]]
+        for future in self.tasks[group]:
+            if not future.done():
+                future.result()  # Blocks until the task is done
+            
+            # Append the result if completed successfully
+            if future not in self.thread_results[group]:
+                if future.exception() is None:
+                    self.thread_results[group].append(future.result())
+                else:
+                    self.critical(f"Error in task: {future.exception()}")
 
+    def get_results(self, group="default"):
+        """
+        Retrieves the results of tasks in a specified group.
+
+        Args:
+            group (str): The group name.
+
+        Returns:
+            list: A list of results from completed tasks.
+        """
+        if group not in self.thread_results:
+            return []
+        return self.thread_results[group]
+
+    def clear_results(self, group="default"):
+        """
+        Clears the stored results for a specific group.
+
+        Args:
+            group (str): The group name.
+        """
+        if group in self.thread_results:
+            self.thread_results[group] = []
+    
     def clear_logs(self):
         """
         Clears the contents of the log file.
