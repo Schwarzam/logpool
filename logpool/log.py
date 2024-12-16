@@ -71,7 +71,7 @@ class ControlThreads:
         self.print_log = print_log
         self.debug_mode = debug
         self.use_process_pool = use_process_pool
-        self.simple_log = simple_log,
+        self.simple_log = simple_log
         self.callback = callback
         
         self.keep_in_memory = keep_in_memory
