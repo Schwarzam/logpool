@@ -80,6 +80,18 @@ class ControlThreads:
         
         self.executor = ProcessPoolExecutor(max_workers) if use_process_pool else ThreadPoolExecutor(max_workers)
     
+    def change_pool(self, process_pool=False):
+        """
+        Changes the pool type to either a thread pool or a process pool.
+
+        Args:
+            process_pool (bool): Whether to use a process pool.
+        """
+        self.executor.shutdown(wait=False)
+        self.use_process_pool = process_pool
+        
+        self.executor = ProcessPoolExecutor(self.workers) if process_pool else ThreadPoolExecutor(self.workers)
+    
     def reconfigure(self, *args, **kwargs):
         """
         Reconfigure the ControlThreads object with new settings.
