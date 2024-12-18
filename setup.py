@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
      name='logpool',
-     version='2.3',
+     version='2.31',
      packages = setuptools.find_packages(),
      author="Gustavo Schwarz",
      author_email="gustavo.b.schwarz@gmail.com",
