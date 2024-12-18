@@ -44,7 +44,7 @@ class ControlThreads:
         self, 
         log_file=None, 
         print_log=True, 
-        debug=False, 
+        debug_mode=False, 
         max_workers=psutil.cpu_count(logical=True) - 2, 
         use_process_pool=False,
         keep_in_memory=False,
@@ -188,7 +188,7 @@ class ControlThreads:
             if self.simple_log:
                 log_message = f"{tipo} - {str(content)}"
             else:
-                log_message += f"{tipo} - {os.path.basename(filename)} - {function}() - {str(content)}"
+                log_message += f"{tipo} - {thread_id} - {os.path.basename(filename)} - {function}() - {str(content)}"
         if print_log:
             print(log_message, end="\n")
         if self.keep_in_memory:
