@@ -69,7 +69,7 @@ class ControlThreads:
             self._init_log()
         self.workers = max_workers
         self.print_log = print_log
-        self.debug_mode = debug
+        self.debug_mode = debug_mode
         self.use_process_pool = use_process_pool
         self.simple_log = simple_log
         self.callback = callback
