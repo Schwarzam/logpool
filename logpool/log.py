@@ -290,4 +290,4 @@ def worker_callbacks(f):
         trace_str += f"[Trace {key}: {i['filename']} - {i['name']}() - line {i['lineno']}]"
     control.critical(f"""{type(e).__name__}: {str(e)} -> {trace_str}""")
 
-control = ControlThreads(log_file=None, print_log=True, debug=True)
+control = ControlThreads(log_file=None, print_log=True, debug_mode=False)
