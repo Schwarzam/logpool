@@ -88,6 +88,8 @@ class ControlThreads:
 
         self.manager = Manager()
         self.cache = self.manager.dict()  # Shared metadata
+        self.key_order = self.manager.list()  # Shared list for tracking LRU order
+        
         self.max_cache_memory = max_cache_memory
         self.current_memory = 0
         self.lock = Lock()
@@ -287,15 +289,18 @@ class ControlThreads:
         return array.nbytes / (1024 * 1024)
 
     def add_to_cache(self, key, array):
+        """Add a numpy array to the shared memory cache."""
         with self.lock:
             array_memory = array.nbytes
             if array_memory > self.max_cache_memory:
                 self.warn(f"Array {key} too large for cache. Skipping.")
                 return
 
+            # Evict items until there's enough space
             while self.current_memory + array_memory > self.max_cache_memory:
                 self._evict()
 
+            # Create shared memory
             shm = shared_memory.SharedMemory(create=True, size=array.nbytes)
             shared_array = np.ndarray(array.shape, dtype=array.dtype, buffer=shm.buf)
             shared_array[:] = array[:]
@@ -306,29 +311,49 @@ class ControlThreads:
                 "shape": array.shape,
                 "dtype": array.dtype,
             }
+            self.key_order.append(key)  # Track the key order
             self.current_memory += array_memory
             
     def _evict(self):
         """Evict the least recently used (LRU) item from the cache."""
-        if not self.cache:
+        if not self.key_order:
             raise RuntimeError("Cannot evict from an empty cache. The new item might be too large for the cache.")
 
-        key, data = self.cache.popitem(last=False)  # Remove the oldest (LRU) item
+        # Remove the oldest key
+        oldest_key = self.key_order.pop(0)
+        data = self.cache.pop(oldest_key)
+
+        # Free shared memory
         shm = shared_memory.SharedMemory(name=data["shm_name"])
         shm.close()
         shm.unlink()
-        self.current_memory -= self._get_memory_size(
-            np.zeros(data["shape"], dtype=data["dtype"])
-        )
+        self.current_memory -= np.prod(data["shape"]) * np.dtype(data["dtype"]).itemsize
 
     def get_from_cache(self, key):
-        if key not in self.cache:
-            return None
-
+        """Retrieve a numpy array from the shared memory cache."""
         with self.lock:
+            if key not in self.cache:
+                return None
+
+            # Retrieve metadata
             data = self.cache[key]
-            shm = shared_memory.SharedMemory(name=data["shm_name"])
+
+            # Access shared memory
+            try:
+                shm = shared_memory.SharedMemory(name=data["shm_name"])
+            except FileNotFoundError:
+                # Shared memory segment no longer exists
+                del self.cache[key]
+                self.key_order.remove(key)
+                return None
+
+            # Reconstruct numpy array
             array = np.ndarray(data["shape"], dtype=data["dtype"], buffer=shm.buf)
+
+            # Update key order to mark as recently used
+            self.key_order.remove(key)
+            self.key_order.append(key)
+
             return array.copy()
     
     def clear_cache(self):
