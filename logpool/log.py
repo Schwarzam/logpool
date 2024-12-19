@@ -6,6 +6,9 @@ from datetime import datetime
 import time
 import psutil
 from threading import Lock
+from collections import OrderedDict
+from multiprocessing import shared_memory, Lock
+import numpy as np
 
 class ControlThreads:
     """
@@ -49,7 +52,8 @@ class ControlThreads:
         use_process_pool=False,
         keep_in_memory=False,
         simple_log=False,
-        callback=None
+        callback=None,
+        max_cache_memory=100_000 # max cache memory in bytes
     ):
         
         """
@@ -75,10 +79,17 @@ class ControlThreads:
         self.callback = callback
         
         self.keep_in_memory = keep_in_memory
-        self.memory = []
+        self.log_memory = []
+        
+        
         self.thread_results = {'default': []}
         
         self.executor = ProcessPoolExecutor(max_workers) if use_process_pool else ThreadPoolExecutor(max_workers)
+
+        self.cache = OrderedDict()  # Cache to store shared memory references of numpy arrays
+        self.max_cache_memory = max_cache_memory  # Max memory in bytes
+        self.current_memory = 0  # Current memory usage in bytes
+        self.lock = Lock()  # Lock for thread/process safety
     
     def change_pool(self, process_pool=False):
         """
@@ -192,7 +203,7 @@ class ControlThreads:
         if print_log:
             print(log_message, end="\n")
         if self.keep_in_memory:
-            self.memory.append(log_message)
+            self.log_memory.append(log_message)
         if self.log_file is not None:
             with self.lock:
                 with open(self.log_file, 'a') as io:
@@ -268,6 +279,75 @@ class ControlThreads:
         """
         with open(self.log_file, 'w') as io:
             io.close()
+    
+    
+    def _get_memory_size(self, array):
+        """Get size of a numpy array in MB."""
+        return array.nbytes / (1024 * 1024)
+
+    def add_to_cache(self, key, array):
+        """Add a numpy array to the shared memory cache."""
+        with self.lock:
+            array_memory = self._get_memory_size(array)
+
+            # Check if the array can ever fit in the cache
+            if array_memory > self.max_cache_memory:
+                print(f"Warning: Array {key} is too large for the cache. Skipping.")
+                return
+
+            # Evict items until there's enough space
+            while self.current_memory + array_memory > self.max_cache_memory:
+                self._evict()
+
+            # Create shared memory
+            shm = shared_memory.SharedMemory(create=True, size=array.nbytes)
+            shared_array = np.ndarray(array.shape, dtype=array.dtype, buffer=shm.buf)
+            shared_array[:] = array[:]  # Copy data into shared memory
+
+            # Add to cache
+            self.cache[key] = {
+                "shm_name": shm.name,
+                "shape": array.shape,
+                "dtype": array.dtype,
+            }
+            self.current_memory += array_memory
+            
+    def _evict(self):
+        """Evict the least recently used (LRU) item from the cache."""
+        if not self.cache:
+            raise RuntimeError("Cannot evict from an empty cache. The new item might be too large for the cache.")
+
+        key, data = self.cache.popitem(last=False)  # Remove the oldest (LRU) item
+        shm = shared_memory.SharedMemory(name=data["shm_name"])
+        shm.close()
+        shm.unlink()
+        self.current_memory -= self._get_memory_size(
+            np.zeros(data["shape"], dtype=data["dtype"])
+        )
+
+    def get_from_cache(self, key):
+        """Retrieve a numpy array from the shared memory cache."""
+        with self.lock:
+            if key not in self.cache:
+                return None
+
+            # Update LRU order
+            data = self.cache.pop(key)
+            self.cache[key] = data
+
+            # Access shared memory
+            shm = shared_memory.SharedMemory(name=data["shm_name"])
+            return np.ndarray(data["shape"], dtype=data["dtype"], buffer=shm.buf)
+
+    def clear_cache(self):
+        """Clear all shared memory from the cache."""
+        with self.lock:
+            for data in self.cache.values():
+                shm = shared_memory.SharedMemory(name=data["shm_name"])
+                shm.close()
+                shm.unlink()
+            self.cache.clear()
+            self.current_memory = 0
 
 def worker_callbacks(f):
     """
