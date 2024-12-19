@@ -6,7 +6,7 @@ from datetime import datetime
 import time
 import psutil
 from threading import Lock
-from collections import OrderedDict
+from multiprocessing import Manager
 from multiprocessing import shared_memory, Lock
 import numpy as np
 
@@ -86,11 +86,12 @@ class ControlThreads:
         
         self.executor = ProcessPoolExecutor(max_workers) if use_process_pool else ThreadPoolExecutor(max_workers)
 
-        self.cache = OrderedDict()  # Cache to store shared memory references of numpy arrays
-        self.max_cache_memory = max_cache_memory  # Max memory in bytes
-        self.current_memory = 0  # Current memory usage in bytes
-        self.lock = Lock()  # Lock for thread/process safety
-    
+        self.manager = Manager()
+        self.cache = self.manager.dict()  # Shared metadata
+        self.max_cache_memory = max_cache_memory
+        self.current_memory = 0
+        self.lock = Lock()
+        
     def change_pool(self, process_pool=False):
         """
         Changes the pool type to either a thread pool or a process pool.
@@ -286,25 +287,20 @@ class ControlThreads:
         return array.nbytes / (1024 * 1024)
 
     def add_to_cache(self, key, array):
-        """Add a numpy array to the shared memory cache."""
         with self.lock:
-            array_memory = self._get_memory_size(array)
-
-            # Check if the array can ever fit in the cache
+            array_memory = array.nbytes
             if array_memory > self.max_cache_memory:
-                print(f"Warning: Array {key} is too large for the cache. Skipping.")
+                self.warn(f"Array {key} too large for cache. Skipping.")
                 return
 
-            # Evict items until there's enough space
             while self.current_memory + array_memory > self.max_cache_memory:
                 self._evict()
 
-            # Create shared memory
             shm = shared_memory.SharedMemory(create=True, size=array.nbytes)
             shared_array = np.ndarray(array.shape, dtype=array.dtype, buffer=shm.buf)
-            shared_array[:] = array[:]  # Copy data into shared memory
+            shared_array[:] = array[:]
 
-            # Add to cache
+            # Add metadata to shared cache
             self.cache[key] = {
                 "shm_name": shm.name,
                 "shape": array.shape,
@@ -326,19 +322,15 @@ class ControlThreads:
         )
 
     def get_from_cache(self, key):
-        """Retrieve a numpy array from the shared memory cache."""
+        if key not in self.cache:
+            return None
+
         with self.lock:
-            if key not in self.cache:
-                return None
-
-            # Update LRU order
-            data = self.cache.pop(key)
-            self.cache[key] = data
-
-            # Access shared memory
+            data = self.cache[key]
             shm = shared_memory.SharedMemory(name=data["shm_name"])
-            return np.ndarray(data["shape"], dtype=data["dtype"], buffer=shm.buf)
-
+            array = np.ndarray(data["shape"], dtype=data["dtype"], buffer=shm.buf)
+            return array.copy()
+    
     def clear_cache(self):
         """Clear all shared memory from the cache."""
         with self.lock:
