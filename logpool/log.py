@@ -81,6 +81,7 @@ class ControlThreads:
         self.keep_in_memory = keep_in_memory
         self.log_memory = []
         
+        self.c = None # Clean variable for eventual use
         
         self.thread_results = {'default': []}
         
@@ -93,7 +94,7 @@ class ControlThreads:
         self.max_cache_memory = max_cache_memory
         self.current_memory = 0
         self.lock = Lock()
-        
+    
     def change_pool(self, process_pool=False):
         """
         Changes the pool type to either a thread pool or a process pool.
