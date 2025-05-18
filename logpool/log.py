@@ -102,11 +102,20 @@ class ControlThreads:
         Args:
             process_pool (bool): Whether to use a process pool.
         """
-        self.executor.shutdown(wait=False)
+        self.debug_active_threads()
+        self.executor.shutdown(wait=True)  # ensure all tasks finish and resources are cleaned
+        self.debug_active_threads()
+        del self.executor  # remove old reference
+        time.sleep(0.1)    # optional small delay
         self.use_process_pool = process_pool
-        
         self.executor = ProcessPoolExecutor(self.workers) if process_pool else ThreadPoolExecutor(self.workers)
+        
     
+    def debug_active_threads(self):
+        self.debug("[DEBUG] Active threads:")
+        for t in threading.enumerate():
+            self.debug(f" - {t.name} (daemon={t.daemon})")
+            
     def reconfigure(self, *args, **kwargs):
         """
         Reconfigure the ControlThreads object with new settings.
